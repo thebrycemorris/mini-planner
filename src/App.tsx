@@ -10,10 +10,12 @@ import Profile from "./pages/Profile";
 import AuthPage from "./pages/Auth";
 
 import ProtectedRoute from "./auth/ProtectedRoute";
+import { useAuth } from "./auth/AuthContext";
 
 import type { Priority, Task } from "./lib/types";
-import { loadTasks, saveTasks } from "./lib/storage";
 import { todayISO } from "./lib/date";
+import { createTask, deleteTask, listenToTasks, toggleTask } from "./lib/tasksStore";
+import { migrateLocalTasksToFirestore } from "./lib/migrate";
 
 function makeId() {
   return String(Date.now()) + Math.random().toString(16).slice(2);
@@ -27,12 +29,26 @@ type NewTaskInput = {
 };
 
 export default function App() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
 
-  useEffect(() => setTasks(loadTasks()), []);
-  useEffect(() => saveTasks(tasks), [tasks]);
+  // Listen to firestore tasks when logged in
+  useEffect(() => {
+    if (!user) {
+      setTasks([]);
+      return;
+    }
 
-  function addTask(input: NewTaskInput) {
+    // migrate localStorage tasks once
+    migrateLocalTasksToFirestore(user.uid).catch(console.error);
+
+    const unsub = listenToTasks(user.uid, setTasks);
+    return () => unsub();
+  }, [user]);
+
+  async function addTask(input: NewTaskInput) {
+    if (!user) return;
+
     const t: Task = {
       id: makeId(),
       title: input.title.trim(),
@@ -42,22 +58,24 @@ export default function App() {
       completed: false,
       createdAt: Date.now(),
     };
-    setTasks((prev) => [t, ...prev]);
+
+    await createTask(user.uid, t);
   }
 
-  function toggleComplete(id: string) {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
+  async function toggleComplete(id: string) {
+    if (!user) return;
+    const current = tasks.find((t) => t.id === id);
+    if (!current) return;
+    await toggleTask(user.uid, id, !current.completed);
   }
 
-  function removeTask(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+  async function removeTask(id: string) {
+    if (!user) return;
+    await deleteTask(user.uid, id);
   }
 
   return (
     <Routes>
-      {/* App pages (protected) */}
       <Route
         path="/"
         element={

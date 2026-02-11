@@ -8,7 +8,7 @@ export async function migrateLocalTasksToFirestore(uid: string) {
   const already = localStorage.getItem(MIGRATION_KEY);
   if (already === uid) return; // already migrated for this user
 
-  const local = loadTasks();
+  const local: Task[]= loadTasks();
   if (local.length === 0) {
     localStorage.setItem(MIGRATION_KEY, uid);
     return;
